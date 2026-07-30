@@ -1,0 +1,61 @@
+<section class="view active-view" [attr.data-render]="state.renderVersion()">
+  <div class="metric-grid">
+    <article class="metric">
+      <span>Total employees</span>
+      <strong>{{ state.dashboard?.totalEmployees ?? 0 }}</strong>
+    </article>
+    <article class="metric">
+      <span>Today attendance</span>
+      <strong>{{ state.dashboard?.todayAttendance ?? 0 }}</strong>
+    </article>
+    <article class="metric">
+      <span>Late employees</span>
+      <strong>{{ state.dashboard?.lateEmployees ?? 0 }}</strong>
+    </article>
+    <article class="metric">
+      <span>On leave</span>
+      <strong>{{ state.dashboard?.employeesOnLeave ?? 0 }}</strong>
+    </article>
+    <article class="metric" *ngIf="state.can('payroll.read')">
+      <span>Payroll ready</span>
+      <strong>{{ state.money(state.dashboard?.payrollSummary) }}</strong>
+    </article>
+  </div>
+
+  <div class="split-grid">
+    <section class="panel">
+      <div class="panel-header">
+        <h3>Recent Activity</h3>
+      </div>
+      <div class="activity-list">
+        <article *ngFor="let item of state.dashboard?.recentActivity" class="activity-item">
+          <strong>{{ item.action }} {{ item.entityName }}</strong>
+          <small>{{ item.details }} - {{ state.dateTime(item.createdAt) }}</small>
+        </article>
+        <article *ngIf="!state.dashboard?.recentActivity?.length" class="activity-item">
+          <strong>No activity yet</strong>
+          <small>Activity will appear after team actions.</small>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h3>Leave Queue</h3>
+      </div>
+      <div class="compact-list">
+        <article *ngFor="let item of state.pendingLeave" class="compact-item">
+          <strong>{{ item.employeeName }} - {{ item.leaveType }}</strong>
+          <small>
+            {{ state.dateOnly(item.startDate) }} to {{ state.dateOnly(item.endDate) }}
+            <app-status-badge [value]="item.status"></app-status-badge>
+          </small>
+        </article>
+        <article *ngIf="!state.pendingLeave.length" class="compact-item">
+          <strong>No pending leave</strong>
+          <small>The approval queue is clear.</small>
+        </article>
+      </div>
+    </section>
+  </div>
+</section>

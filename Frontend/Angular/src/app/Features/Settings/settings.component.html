@@ -1,0 +1,22 @@
+<section class="view active-view" [attr.data-render]="state.renderVersion()">
+  @if (!state.can('roles.read')) {
+    <app-empty-state
+      title="Access restricted"
+      message="You need roles.read permission to view settings.">
+    </app-empty-state>
+  } @else if (!state.roles.length) {
+    <app-empty-state
+      title="No roles configured"
+      message="Role profiles will appear here once they are set up.">
+    </app-empty-state>
+  } @else {
+    <div class="role-grid">
+      <article *ngFor="let role of state.roles" class="role-card">
+        <h3>{{ role.name }}</h3>
+        <div class="permission-list">
+          <span *ngFor="let permission of role.permissions" class="badge">{{ permission }}</span>
+        </div>
+      </article>
+    </div>
+  }
+</section>

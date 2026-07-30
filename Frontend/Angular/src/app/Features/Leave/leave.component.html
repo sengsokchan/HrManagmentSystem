@@ -1,0 +1,179 @@
+<section class="view active-view" [attr.data-render]="state.renderVersion()">
+  <div class="toolbar">
+    <button type="button" class="primary-button" (click)="state.openLeaveDialog()">{{ 'leave.request' | t }}</button>
+  </div>
+
+  <div class="balance-panel">
+    <div class="balance-panel-header">
+      <div>
+        <h3>{{ 'leave.balances' | t }} · {{ state.leaveBalanceYear }}</h3>
+        <p class="muted-text">Defaults: Annual 18 · Sick 10 · Maternity 90 · Emergency 3. Unpaid has no balance.</p>
+      </div>
+      <div class="toolbar-filters" *ngIf="state.can('leave.write') || state.can('employees.read')">
+        <label>
+          <span class="sr-only">Employee</span>
+          <select
+            [(ngModel)]="state.leaveBalanceEmployeeId"
+            (ngModelChange)="state.changeLeaveBalanceEmployee($event)"
+            aria-label="Balance employee">
+            <option *ngFor="let employee of state.leaveEmployees" [ngValue]="employee.id">{{ employee.fullName }}</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    @if (!state.leaveBalances.length) {
+      <p class="muted-text">No balance data for this employee yet.</p>
+    } @else {
+      <div class="balance-grid">
+        <div class="balance-card" *ngFor="let balance of state.leaveBalances">
+          <strong>{{ balance.leaveType }}</strong>
+          <div class="balance-metrics">
+            <span><em>{{ balance.remainingDays }}</em> remaining</span>
+            <span>{{ balance.usedDays }} used</span>
+            <span>{{ balance.pendingDays }} pending</span>
+            <span>{{ balance.entitledDays }} entitled</span>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (state.can('leave.write') || state.can('employees.write')) {
+      <div class="balance-edit-row">
+        <select [(ngModel)]="state.leaveBalanceEditType" aria-label="Leave type entitlement">
+          <option>Annual leave</option>
+          <option>Sick leave</option>
+          <option>Maternity leave</option>
+          <option>Emergency leave</option>
+        </select>
+        <input
+          type="number"
+          min="0"
+          max="366"
+          step="0.5"
+          [(ngModel)]="state.leaveBalanceEditDays"
+          aria-label="Entitled days">
+        <button
+          type="button"
+          class="ghost-button"
+          [disabled]="state.leaveBalanceSaving || !state.leaveBalanceEmployeeId"
+          (click)="state.saveLeaveBalanceEntitlement()">
+          {{ state.leaveBalanceSaving ? ('auth.saving' | t) : ('leave.updateEntitlement' | t) }}
+        </button>
+      </div>
+    }
+  </div>
+
+  @if (!state.leaveRequests.length) {
+    <app-empty-state
+      [title]="'leave.emptyTitle' | t"
+      [message]="'leave.emptyHint' | t">
+    </app-empty-state>
+  } @else {
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>{{ 'leave.employee' | t }}</th>
+            <th>{{ 'leave.type' | t }}</th>
+            <th>{{ 'leave.dates' | t }}</th>
+            <th>{{ 'leave.days' | t }}</th>
+            <th>{{ 'leave.halfDay' | t }}</th>
+            <th>{{ 'leave.status' | t }}</th>
+            <th>{{ 'leave.reason' | t }}</th>
+            <th>{{ 'leave.attachment' | t }}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let item of state.leaveRequests">
+            <td data-label="Employee">{{ item.employeeName }}</td>
+            <td data-label="Type">{{ item.leaveType }}</td>
+            <td data-label="Dates">{{ state.dateOnly(item.startDate) }} to {{ state.dateOnly(item.endDate) }}</td>
+            <td data-label="Days">{{ item.days }}</td>
+            <td data-label="Half day">{{ item.isHalfDay ? 'Yes' : 'No' }}</td>
+            <td data-label="Status"><app-status-badge [value]="item.status"></app-status-badge></td>
+            <td data-label="Reason">{{ item.reason }}</td>
+            <td data-label="Attachment">
+              @if (item.attachmentUrl) {
+                <a [href]="item.attachmentUrl" target="_blank" rel="noopener noreferrer">View</a>
+              } @else {
+                —
+              }
+            </td>
+            <td data-label="Actions">
+              <div *ngIf="state.canDecideLeave(item)" class="row-actions">
+                <button type="button" class="small-button" (click)="state.decideLeave(item, 'approve')">{{ 'action.approve' | t }}</button>
+                <button type="button" class="small-button" (click)="state.decideLeave(item, 'reject')">{{ 'action.reject' | t }}</button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination" *ngIf="state.leaveTotal > state.leaveQuery.pageSize">
+      <button type="button" class="ghost-button" [disabled]="state.leaveQuery.page <= 1" (click)="state.changeLeavePage(state.leaveQuery.page - 1)">Previous</button>
+      <span>Page {{ state.leaveQuery.page }} of {{ state.leavePageCount }} ({{ state.leaveTotal }})</span>
+      <button type="button" class="ghost-button" [disabled]="state.leaveQuery.page >= state.leavePageCount" (click)="state.changeLeavePage(state.leaveQuery.page + 1)">Next</button>
+    </div>
+  }
+</section>
+
+@if (state.showLeaveDialog) {
+  <app-modal labelledBy="leaveDialogTitle" [wide]="true" (closed)="state.closeLeaveDialog()">
+    <form class="modal-form" (ngSubmit)="state.saveLeaveRequest()">
+      <div class="modal-header">
+        <h3 id="leaveDialogTitle">Leave Request</h3>
+        <button type="button" class="icon-button" aria-label="Close" (click)="state.closeLeaveDialog()">X</button>
+      </div>
+      <div class="form-grid">
+        <app-form-field label="Employee" [error]="state.leaveFormErrors.employeeId || ''">
+          <select
+            name="leaveEmployee"
+            [(ngModel)]="state.leaveForm.employeeId"
+            (ngModelChange)="state.onLeaveFormEmployeeChange()">
+            <option *ngFor="let employee of state.leaveEmployees" [ngValue]="employee.id">{{ employee.fullName }}</option>
+          </select>
+        </app-form-field>
+        <app-form-field label="Leave type">
+          <select name="leaveType" [(ngModel)]="state.leaveForm.leaveType">
+            <option>Annual leave</option>
+            <option>Sick leave</option>
+            <option>Maternity leave</option>
+            <option>Emergency leave</option>
+            <option>Unpaid leave</option>
+          </select>
+        </app-form-field>
+        <app-form-field label="Start date" [error]="state.leaveFormErrors.startDate || ''">
+          <input name="leaveStart" type="date" [(ngModel)]="state.leaveForm.startDate" required>
+        </app-form-field>
+        <app-form-field label="End date" [error]="state.leaveFormErrors.endDate || ''">
+          <input name="leaveEnd" type="date" [(ngModel)]="state.leaveForm.endDate" required>
+        </app-form-field>
+      </div>
+      <label class="checkbox-row">
+        <input name="leaveHalfDay" type="checkbox" [(ngModel)]="state.leaveForm.isHalfDay">
+        <span>Half day</span>
+      </label>
+      <p class="muted-text" *ngIf="state.estimatedLeaveDays() as days">
+        Requesting {{ days }} day(s)
+        <ng-container *ngIf="state.selectedLeaveBalance() as bal">
+          · {{ bal.remainingDays }} remaining for {{ bal.leaveType }}
+        </ng-container>
+      </p>
+      <app-form-field label="Reason" [error]="state.leaveFormErrors.reason || ''">
+        <textarea name="leaveReason" [(ngModel)]="state.leaveForm.reason" required></textarea>
+      </app-form-field>
+      <app-form-field label="Attachment URL (optional)">
+        <input name="leaveAttachment" type="url" placeholder="https://…" [(ngModel)]="state.leaveForm.attachmentUrl">
+      </app-form-field>
+      <div class="modal-actions">
+        <button type="button" class="ghost-button" [disabled]="state.saveInProgress" (click)="state.closeLeaveDialog()">Cancel</button>
+        <button type="submit" class="primary-button" [disabled]="state.saveInProgress">
+          {{ state.saveInProgress ? 'Submitting…' : 'Submit' }}
+        </button>
+      </div>
+    </form>
+  </app-modal>
+}

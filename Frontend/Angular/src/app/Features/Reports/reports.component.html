@@ -1,0 +1,257 @@
+<section class="view active-view" [attr.data-render]="state.renderVersion()">
+  <div class="metric-grid">
+    <article class="metric">
+      <span>Attendance records</span>
+      <strong>{{ state.attendanceTotal }}</strong>
+    </article>
+    <article class="metric">
+      <span>Leave requests</span>
+      <strong>{{ state.leaveTotal }}</strong>
+    </article>
+    <article class="metric">
+      <span>Pending leave</span>
+      <strong>{{ state.pendingLeave.length }}</strong>
+    </article>
+    <article class="metric" *ngIf="state.can('payroll.read')">
+      <span>Payroll runs</span>
+      <strong>{{ state.payrollTotal }}</strong>
+    </article>
+    <article class="metric" *ngIf="state.can('payroll.read')">
+      <span>Payroll summary</span>
+      <strong>{{ state.money(state.dashboard?.payrollSummary) }}</strong>
+    </article>
+  </div>
+
+  <section class="panel report-builder">
+    <div class="panel-header report-header">
+      <div>
+        <h3>Export reports</h3>
+        <p class="report-hint">{{ activeCategory.hint }}</p>
+      </div>
+      <button
+        type="button"
+        class="primary-button"
+        [disabled]="!hasRows || loading || exporting"
+        (click)="exportExcel()">
+        {{ exporting ? 'Exporting…' : 'Export to Excel' }}
+      </button>
+    </div>
+
+    <div class="report-body">
+      <div class="segmented report-categories" role="tablist" aria-label="Report category">
+        <button
+          *ngFor="let item of visibleCategories"
+          type="button"
+          role="tab"
+          [class.active]="category === item.id"
+          [attr.aria-selected]="category === item.id"
+          (click)="selectCategory(item.id)">
+          {{ item.label }}
+        </button>
+      </div>
+
+      <div class="toolbar report-filters">
+        <label *ngIf="category === 'attendance' || category === 'leave' || category === 'payroll'">
+          <span>From</span>
+          <input type="date" [(ngModel)]="from" name="reportFrom">
+        </label>
+        <label *ngIf="category === 'attendance' || category === 'leave' || category === 'payroll'">
+          <span>To</span>
+          <input type="date" [(ngModel)]="to" name="reportTo">
+        </label>
+
+        <label *ngIf="category === 'attendance'">
+          <span>Status</span>
+          <select [(ngModel)]="status" name="reportAttendanceStatus">
+            <option value="">All</option>
+            <option value="Present">Present</option>
+            <option value="Late">Late</option>
+            <option value="Absent">Absent</option>
+          </select>
+        </label>
+
+        <label *ngIf="category === 'leave'">
+          <span>Status</span>
+          <select [(ngModel)]="status" name="reportLeaveStatus">
+            <option value="">All</option>
+            <option value="Pending">Pending</option>
+            <option value="ManagerApproved">Manager approved</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+        </label>
+
+        <label *ngIf="category === 'leave'">
+          <span>Leave type</span>
+          <select [(ngModel)]="leaveType" name="reportLeaveType">
+            <option value="">All types</option>
+            <option>Annual leave</option>
+            <option>Sick leave</option>
+            <option>Maternity leave</option>
+            <option>Emergency leave</option>
+            <option>Unpaid leave</option>
+          </select>
+        </label>
+
+        <label *ngIf="category === 'payroll'">
+          <span>Status</span>
+          <select [(ngModel)]="status" name="reportPayrollStatus">
+            <option value="">All</option>
+            <option value="Draft">Draft</option>
+            <option value="Approved">Approved</option>
+            <option value="Paid">Paid</option>
+          </select>
+        </label>
+
+        <label *ngIf="category === 'employees'">
+          <span>Status</span>
+          <select [(ngModel)]="status" name="reportEmployeeStatus">
+            <option value="">All</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+            <option value="Resigned">Resigned</option>
+          </select>
+        </label>
+
+        <label *ngIf="category === 'employees'">
+          <span>Department</span>
+          <select [(ngModel)]="departmentId" name="reportDepartment">
+            <option [ngValue]="null">All departments</option>
+            <option *ngFor="let department of state.departments" [ngValue]="department.id">
+              {{ department.name }}
+            </option>
+          </select>
+        </label>
+
+        <label class="report-search">
+          <span>Search</span>
+          <input
+            type="search"
+            [(ngModel)]="search"
+            name="reportSearch"
+            [placeholder]="category === 'employees' ? 'Name, code, email…' : 'Employee name…'">
+        </label>
+
+        <button type="button" class="ghost-button" [disabled]="loading" (click)="applyFilters()">
+          {{ loading ? 'Loading…' : 'Apply filters' }}
+        </button>
+      </div>
+
+      <p class="report-count" *ngIf="!previewError">
+        {{ previewTotal }} result{{ previewTotal === 1 ? '' : 's' }}
+      </p>
+
+      <div class="view-error" *ngIf="previewError" role="alert">
+        <strong>Could not load report</strong>
+        <p>{{ previewError }}</p>
+        <button type="button" class="primary-button" (click)="applyFilters()">Retry</button>
+      </div>
+
+      <div *ngIf="!previewError && loading" class="view-loading" role="status">
+        <p>Loading report preview…</p>
+      </div>
+
+      <ng-container *ngIf="!previewError && !loading">
+        <app-empty-state
+          *ngIf="!hasRows"
+          title="No rows for these filters"
+          message="Adjust the date range or other filters, then apply again.">
+        </app-empty-state>
+
+        <div class="table-wrap" *ngIf="category === 'attendance' && attendanceRows.length">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Employee</th>
+                <th>Check in</th>
+                <th>Check out</th>
+                <th>Status</th>
+                <th>Mode</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let item of attendanceRows">
+                <td data-label="Date">{{ state.dateOnly(item.workDate) }}</td>
+                <td data-label="Employee">{{ item.employeeName }}</td>
+                <td data-label="Check in">{{ state.timeOnly(item.checkIn) }}</td>
+                <td data-label="Check out">{{ state.timeOnly(item.checkOut) }}</td>
+                <td data-label="Status"><app-status-badge [value]="item.status"></app-status-badge></td>
+                <td data-label="Mode">{{ item.workMode }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="table-wrap" *ngIf="category === 'leave' && leaveRows.length">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Type</th>
+                <th>Dates</th>
+                <th>Days</th>
+                <th>Status</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let item of leaveRows">
+                <td data-label="Employee">{{ item.employeeName }}</td>
+                <td data-label="Type">{{ item.leaveType }}</td>
+                <td data-label="Dates">{{ state.dateOnly(item.startDate) }} to {{ state.dateOnly(item.endDate) }}</td>
+                <td data-label="Days">{{ item.days }}</td>
+                <td data-label="Status"><app-status-badge [value]="item.status"></app-status-badge></td>
+                <td data-label="Reason">{{ item.reason }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="table-wrap" *ngIf="category === 'payroll' && payrollRows.length">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Period</th>
+                <th>Net</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let item of payrollRows">
+                <td data-label="Employee">{{ item.employeeName }}</td>
+                <td data-label="Period">{{ state.dateOnly(item.periodStart) }} to {{ state.dateOnly(item.periodEnd) }}</td>
+                <td data-label="Net"><strong>{{ state.money(item.netSalary) }}</strong></td>
+                <td data-label="Status"><app-status-badge [value]="item.status"></app-status-badge></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="table-wrap" *ngIf="category === 'employees' && employeeRows.length">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Department</th>
+                <th>Position</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let item of employeeRows">
+                <td data-label="Code">{{ item.employeeCode }}</td>
+                <td data-label="Name">{{ item.fullName }}</td>
+                <td data-label="Department">{{ item.department }}</td>
+                <td data-label="Position">{{ item.position }}</td>
+                <td data-label="Status"><app-status-badge [value]="item.status"></app-status-badge></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </ng-container>
+    </div>
+  </section>
+</section>

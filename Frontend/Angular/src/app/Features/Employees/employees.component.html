@@ -1,0 +1,242 @@
+<section class="view active-view" [attr.data-render]="state.renderVersion()">
+  <div class="toolbar">
+    <div class="toolbar-filters">
+      <label class="search-box">
+        <span class="sr-only">Search employees</span>
+        <input
+          type="search"
+          placeholder="Search employees"
+          [(ngModel)]="state.employeeQuery.search"
+          (keyup.enter)="state.searchEmployees()"
+          aria-label="Search employees">
+      </label>
+      <label>
+        <span class="sr-only">Status</span>
+        <select [(ngModel)]="state.employeeQuery.status" aria-label="Filter by status" (change)="state.applyEmployeeFilters()">
+          <option value="">All statuses</option>
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+          <option value="Resigned">Resigned</option>
+        </select>
+      </label>
+      <button type="button" class="ghost-button" (click)="state.searchEmployees()">Search</button>
+    </div>
+    <button
+      type="button"
+      class="primary-button"
+      [disabled]="!state.can('employees.write')"
+      (click)="state.openEmployeeDialog()">
+      {{ 'employees.new' | t }}
+    </button>
+  </div>
+
+  @if (!state.employees.length) {
+    <app-empty-state
+      [title]="state.employeeQuery.search || state.employeeQuery.status ? 'No matching employees' : 'No employees yet'"
+      [message]="state.employeeQuery.search || state.employeeQuery.status ? 'Try a different search or clear filters.' : 'Add your first employee to get started.'">
+    </app-empty-state>
+  } @else {
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Name</th>
+            <th>Department</th>
+            <th>Position</th>
+            <th>Branch</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let employee of state.employees">
+            <td data-label="Code">{{ employee.employeeCode }}</td>
+            <td data-label="Name">
+              <strong>{{ employee.fullName }}</strong><br>
+              <small>{{ employee.email }}</small>
+            </td>
+            <td data-label="Department">{{ employee.department }}</td>
+            <td data-label="Position">{{ employee.position }}</td>
+            <td data-label="Branch">{{ employee.branch }}</td>
+            <td data-label="Status"><app-status-badge [value]="employee.status"></app-status-badge></td>
+            <td data-label="Actions">
+              <div class="row-actions">
+                <button
+                  type="button"
+                  class="small-button"
+                  [disabled]="!state.can('employees.write')"
+                  (click)="state.openEmployeeDialog(employee)">
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  class="small-button"
+                  [disabled]="!state.can('employees.write')"
+                  (click)="state.resetEmployeePassword(employee.id, employee.fullName)">
+                  {{ 'employees.resetPassword' | t }}
+                </button>
+                <button
+                  type="button"
+                  class="small-button"
+                  [disabled]="!state.can('employees.write')"
+                  (click)="state.deactivateEmployee(employee.id, employee.fullName)">
+                  {{ 'action.delete' | t }}
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination" *ngIf="state.employeeTotal > state.employeeQuery.pageSize">
+      <button
+        type="button"
+        class="ghost-button"
+        [disabled]="state.employeeQuery.page <= 1"
+        (click)="state.changeEmployeePage(state.employeeQuery.page - 1)">
+        Previous
+      </button>
+      <span>Page {{ state.employeeQuery.page }} of {{ state.employeePageCount }} ({{ state.employeeTotal }})</span>
+      <button
+        type="button"
+        class="ghost-button"
+        [disabled]="state.employeeQuery.page >= state.employeePageCount"
+        (click)="state.changeEmployeePage(state.employeeQuery.page + 1)">
+        Next
+      </button>
+    </div>
+  }
+</section>
+
+@if (state.showEmployeeDialog) {
+  <app-modal labelledBy="employeeDialogTitle" (closed)="state.closeEmployeeDialog()">
+    <form class="modal-form" (ngSubmit)="state.saveEmployee()">
+      <div class="modal-header">
+        <h3 id="employeeDialogTitle">{{ state.employeeForm.id ? 'Edit Employee' : 'New Employee' }}</h3>
+        <button type="button" class="icon-button" aria-label="Close" (click)="state.closeEmployeeDialog()">X</button>
+      </div>
+      <div class="form-grid">
+        <app-form-field label="Full name" [error]="state.employeeFormErrors.fullName || ''">
+          <input name="employeeFullName" [(ngModel)]="state.employeeForm.fullName" [attr.aria-invalid]="!!state.employeeFormErrors.fullName" required>
+        </app-form-field>
+        <app-form-field label="Gender">
+          <select name="employeeGender" [(ngModel)]="state.employeeForm.gender">
+            <option>Male</option>
+            <option>Female</option>
+            <option>Other</option>
+          </select>
+        </app-form-field>
+        <app-form-field label="Date of birth" [error]="state.employeeFormErrors.dateOfBirth || ''">
+          <input name="employeeDob" type="date" [(ngModel)]="state.employeeForm.dateOfBirth" required>
+        </app-form-field>
+        <app-form-field label="Email" [error]="state.employeeFormErrors.email || ''">
+          <input name="employeeEmail" type="email" [(ngModel)]="state.employeeForm.email" required>
+        </app-form-field>
+        <app-form-field label="Phone" [error]="state.employeeFormErrors.phone || ''">
+          <input name="employeePhone" [(ngModel)]="state.employeeForm.phone" required>
+        </app-form-field>
+        <app-form-field label="Department" [error]="state.employeeFormErrors.departmentId || ''">
+          <select name="employeeDepartment" [(ngModel)]="state.employeeForm.departmentId">
+            <option *ngFor="let department of state.departments" [ngValue]="department.id">{{ department.name }}</option>
+          </select>
+        </app-form-field>
+        <app-form-field label="Position" [error]="state.employeeFormErrors.positionId || ''">
+          <select name="employeePosition" [(ngModel)]="state.employeeForm.positionId">
+            <option *ngFor="let position of state.positions" [ngValue]="position.id">{{ position.title }}</option>
+          </select>
+        </app-form-field>
+        <app-form-field label="Branch" [error]="state.employeeFormErrors.branchId || ''">
+          <select name="employeeBranch" [(ngModel)]="state.employeeForm.branchId">
+            <option *ngFor="let branch of state.branches" [ngValue]="branch.id">{{ branch.name }}</option>
+          </select>
+        </app-form-field>
+        <app-form-field label="Manager">
+          <select name="employeeManager" [(ngModel)]="state.employeeForm.managerId">
+            <option [ngValue]="null">No manager</option>
+            <option *ngFor="let manager of state.allEmployeesForSelect" [ngValue]="manager.id">{{ manager.fullName }}</option>
+          </select>
+        </app-form-field>
+        <app-form-field label="Contract">
+          <select name="employeeContract" [(ngModel)]="state.employeeForm.contractType">
+            <option>Full Time</option>
+            <option>Part Time</option>
+            <option>Internship</option>
+            <option>Contract</option>
+          </select>
+        </app-form-field>
+        <app-form-field label="Join date" [error]="state.employeeFormErrors.joinDate || ''">
+          <input name="employeeJoinDate" type="date" [(ngModel)]="state.employeeForm.joinDate" required>
+        </app-form-field>
+        <app-form-field label="Basic salary" [error]="state.employeeFormErrors.basicSalary || ''">
+          <input name="employeeBasicSalary" type="number" min="0" step="0.01" [(ngModel)]="state.employeeForm.basicSalary" required>
+        </app-form-field>
+        <app-form-field label="Status">
+          <select name="employeeStatus" [(ngModel)]="state.employeeForm.status">
+            <option>Active</option>
+            <option>Inactive</option>
+            <option>Resigned</option>
+          </select>
+        </app-form-field>
+      </div>
+      <app-form-field label="Emergency contact">
+        <input name="employeeEmergency" [(ngModel)]="state.employeeForm.emergencyContact">
+      </app-form-field>
+      <app-form-field label="Education history">
+        <textarea name="employeeEducation" [(ngModel)]="state.employeeForm.educationHistory"></textarea>
+      </app-form-field>
+      <app-form-field label="Work experience">
+        <textarea name="employeeExperience" [(ngModel)]="state.employeeForm.workExperience"></textarea>
+      </app-form-field>
+      <div class="modal-actions">
+        <button type="button" class="ghost-button" [disabled]="state.saveInProgress" (click)="state.closeEmployeeDialog()">Cancel</button>
+        <button type="submit" class="primary-button" [disabled]="state.saveInProgress">
+          {{ state.saveInProgress ? 'Saving…' : (state.employeeForm.id ? 'Save' : 'Create & generate password') }}
+        </button>
+      </div>
+    </form>
+  </app-modal>
+}
+
+@if (state.issuedCredentials; as creds) {
+  <app-modal labelledBy="credentialsDialogTitle" [closeOnBackdrop]="false" (closed)="state.closeCredentialsDialog()">
+    <div class="modal-form">
+      <div class="modal-header">
+        <h3 id="credentialsDialogTitle">
+          {{ creds.reason === 'reset' ? 'Password reset' : 'Send login details' }}
+        </h3>
+        <button type="button" class="icon-button" aria-label="Close" (click)="state.closeCredentialsDialog()">X</button>
+      </div>
+      <p class="confirm-message">
+        @if (creds.reason === 'reset') {
+          Password reset for <strong>{{ creds.fullName }}</strong>.
+          Copy this temporary password and send it securely. They must change it on next sign-in.
+        } @else {
+          Account created for <strong>{{ creds.fullName }}</strong>.
+          Copy this temporary password and send it to them securely. They must change it on first sign-in.
+        }
+      </p>
+      <div class="credentials-box">
+        <div>
+          <span>Login email</span>
+          <strong>{{ creds.loginEmail }}</strong>
+        </div>
+        <div>
+          <span>Temporary password</span>
+          <code class="temp-password">{{ creds.temporaryPassword }}</code>
+        </div>
+      </div>
+      <ul class="password-tips">
+        <li>Shown only once here — it is not stored in plain text.</li>
+        <li>On next login they will be asked to set a new 14+ character passphrase.</li>
+      </ul>
+      <div class="modal-actions">
+        <button type="button" class="ghost-button" (click)="state.copyIssuedPassword()">
+          {{ state.credentialsCopied ? 'Copied' : 'Copy password' }}
+        </button>
+        <button type="button" class="primary-button" (click)="state.closeCredentialsDialog()">Done</button>
+      </div>
+    </div>
+  </app-modal>
+}

@@ -1,0 +1,35 @@
+<main class="login-shell" [attr.data-render]="state.renderVersion()" [attr.data-lang]="i18n.lang()">
+  <section class="login-panel">
+    <div class="brand-row">
+      <span class="brand-mark">HR</span>
+      <div>
+        <h1>{{ 'app.name' | t }}</h1>
+        <p>{{ 'app.tagline' | t }}</p>
+      </div>
+    </div>
+
+    <form class="login-form" (ngSubmit)="state.login($event)">
+      <label>
+        <span>{{ 'auth.email' | t }}</span>
+        <input name="email" type="email" [(ngModel)]="state.loginEmail" autocomplete="username" required>
+      </label>
+      <label>
+        <span>{{ 'auth.password' | t }}</span>
+        <input name="password" type="password" [(ngModel)]="state.loginPassword" autocomplete="current-password" required>
+      </label>
+      <div class="auth-row">
+        <a class="auth-link" routerLink="/forgot-password">{{ 'auth.forgot' | t }}</a>
+      </div>
+      <button type="submit" class="primary-button" [disabled]="state.loginInProgress">
+        {{ state.loginInProgress ? ('action.signingIn' | t) : ('action.signIn' | t) }}
+      </button>
+      <p class="error-text" aria-live="polite">{{ state.loginError }}</p>
+    </form>
+
+    <div class="demo-users" *ngIf="state.isDev">
+      <button type="button" (click)="state.setDemoUser('admin@hr.local', 'Admin@123')">{{ 'auth.demoAdmin' | t }}</button>
+      <button type="button" (click)="state.setDemoUser('manager@hr.local', 'Manager@123')">{{ 'auth.demoManager' | t }}</button>
+      <button type="button" (click)="state.setDemoUser('employee@hr.local', 'Employee@123')">{{ 'auth.demoEmployee' | t }}</button>
+    </div>
+  </section>
+</main>

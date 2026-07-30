@@ -1,0 +1,100 @@
+<section class="view active-view" [attr.data-render]="state.renderVersion()">
+  <div class="toolbar payroll-toolbar">
+    <div class="toolbar-filters" *ngIf="state.canManagePayroll()">
+      <label>
+        <span>{{ 'payroll.periodStart' | t }}</span>
+        <input type="date" [(ngModel)]="state.payrollPeriodStart" [attr.aria-label]="'payroll.periodStart' | t">
+      </label>
+      <label>
+        <span>{{ 'payroll.periodEnd' | t }}</span>
+        <input type="date" [(ngModel)]="state.payrollPeriodEnd" [attr.aria-label]="'payroll.periodEnd' | t">
+      </label>
+      <button
+        type="button"
+        class="primary-button"
+        [disabled]="state.payrollGenerating"
+        (click)="state.generatePayroll()">
+        {{ state.payrollGenerating ? ('payroll.generating' | t) : ('payroll.generate' | t) }}
+      </button>
+    </div>
+    <label>
+      <span class="sr-only">{{ 'employees.status' | t }}</span>
+      <select
+        [(ngModel)]="state.payrollQuery.status"
+        (change)="state.changePayrollPage(1)"
+        [attr.aria-label]="'employees.status' | t">
+        <option value="">{{ 'common.all' | t }}</option>
+        <option value="Draft">Draft</option>
+        <option value="Approved">Approved</option>
+        <option value="Paid">Paid</option>
+      </select>
+    </label>
+  </div>
+
+  <p class="muted-text" *ngIf="state.canManagePayroll()">
+    {{ 'payroll.hint' | t }}
+  </p>
+
+  @if (!state.payroll.length) {
+    <app-empty-state
+      [title]="'payroll.emptyTitle' | t"
+      [message]="'payroll.emptyHint' | t">
+    </app-empty-state>
+  } @else {
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>{{ 'leave.employee' | t }}</th>
+            <th>{{ 'leave.dates' | t }}</th>
+            <th>{{ 'payroll.basic' | t }}</th>
+            <th>{{ 'payroll.allowance' | t }}</th>
+            <th>{{ 'payroll.ot' | t }}</th>
+            <th>{{ 'payroll.tax' | t }}</th>
+            <th>{{ 'payroll.net' | t }}</th>
+            <th>{{ 'leave.status' | t }}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let item of state.payroll">
+            <td data-label="Employee">{{ item.employeeName }}</td>
+            <td data-label="Period">{{ state.dateOnly(item.periodStart) }} to {{ state.dateOnly(item.periodEnd) }}</td>
+            <td data-label="Basic">{{ state.money(item.basicSalary) }}</td>
+            <td data-label="Allowance">{{ state.money(item.allowance) }}</td>
+            <td data-label="OT pay">{{ state.money(item.overtimePay) }}</td>
+            <td data-label="Tax">{{ state.money(item.tax) }}</td>
+            <td data-label="Net"><strong>{{ state.money(item.netSalary) }}</strong></td>
+            <td data-label="Status"><app-status-badge [value]="item.status"></app-status-badge></td>
+            <td data-label="Actions">
+              <div class="row-actions" *ngIf="state.canManagePayroll()">
+                <button
+                  type="button"
+                  class="small-button"
+                  *ngIf="item.status === 'Draft'"
+                  [disabled]="state.payrollActionId === item.id"
+                  (click)="state.setPayrollStatus(item.id, 'Approved')">
+                  {{ 'payroll.approve' | t }}
+                </button>
+                <button
+                  type="button"
+                  class="small-button"
+                  *ngIf="item.status === 'Draft' || item.status === 'Approved'"
+                  [disabled]="state.payrollActionId === item.id"
+                  (click)="state.setPayrollStatus(item.id, 'Paid')">
+                  {{ 'payroll.markPaid' | t }}
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination" *ngIf="state.payrollTotal > state.payrollQuery.pageSize">
+      <button type="button" class="ghost-button" [disabled]="state.payrollQuery.page <= 1" (click)="state.changePayrollPage(state.payrollQuery.page - 1)">{{ 'common.previous' | t }}</button>
+      <span>{{ 'common.page' | t }} {{ state.payrollQuery.page }} {{ 'common.of' | t }} {{ state.payrollPageCount }} ({{ state.payrollTotal }})</span>
+      <button type="button" class="ghost-button" [disabled]="state.payrollQuery.page >= state.payrollPageCount" (click)="state.changePayrollPage(state.payrollQuery.page + 1)">{{ 'common.next' | t }}</button>
+    </div>
+  }
+</section>

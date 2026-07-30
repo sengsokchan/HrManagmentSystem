@@ -1,0 +1,116 @@
+<main class="app-shell" [class.nav-open]="state.mobileNavOpen" [attr.data-render]="state.renderVersion()" [attr.data-lang]="i18n.lang()">
+  <div
+    class="nav-scrim"
+    *ngIf="state.mobileNavOpen"
+    (click)="state.closeMobileNav()"
+    aria-hidden="true"></div>
+
+  <aside class="sidebar" [class.open]="state.mobileNavOpen" id="primary-nav">
+    <div class="sidebar-brand">
+      <span class="brand-mark">HR</span>
+      <div>
+        <strong>{{ 'app.name' | t }}</strong>
+        <small>{{ state.user?.role }}</small>
+      </div>
+    </div>
+
+    <nav class="nav-list" [attr.aria-label]="'nav.primary' | t">
+      <a
+        *ngFor="let item of navItems"
+        [routerLink]="'/' + item.view"
+        routerLinkActive="active"
+        [routerLinkActiveOptions]="{ exact: true }"
+        class="nav-item"
+        [attr.aria-current]="state.currentView === item.view ? 'page' : null"
+        (click)="state.closeMobileNav()">
+        {{ item.labelKey | t }}
+      </a>
+    </nav>
+
+    <button type="button" class="ghost-button" (click)="state.logout()">{{ 'nav.signOut' | t }}</button>
+  </aside>
+
+  <section class="workspace">
+    <header class="topbar">
+      <div class="topbar-leading">
+        <button
+          type="button"
+          class="icon-button menu-toggle"
+          [attr.aria-label]="'nav.open' | t"
+          [attr.aria-expanded]="state.mobileNavOpen"
+          aria-controls="primary-nav"
+          (click)="state.toggleMobileNav()">
+          ☰
+        </button>
+        <div>
+          <h2>{{ state.title }}</h2>
+          <p>{{ state.subtitle }}</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <div class="lang-switch" role="group" [attr.aria-label]="'lang.label' | t">
+          <button
+            type="button"
+            class="ghost-button lang-btn"
+            [class.active]="i18n.lang() === 'en'"
+            (click)="i18n.setLang('en')">
+            {{ 'lang.en' | t }}
+          </button>
+          <button
+            type="button"
+            class="ghost-button lang-btn"
+            [class.active]="i18n.lang() === 'km'"
+            (click)="i18n.setLang('km')">
+            {{ 'lang.km' | t }}
+          </button>
+        </div>
+        <button
+          type="button"
+          class="ghost-button refresh-button"
+          [attr.aria-label]="'action.refresh' | t"
+          [disabled]="state.refreshing || state.viewLoading"
+          (click)="state.refresh()">
+          <span [class.spinning]="state.refreshing">↻</span>
+          {{ 'action.refresh' | t }}
+        </button>
+        <span class="signed-in">{{ state.user?.email }}</span>
+      </div>
+    </header>
+
+    <div class="workspace-body">
+      @if (state.viewLoading) {
+        <div class="view-loading" role="status" aria-live="polite">
+          <div class="skeleton-grid">
+            <div class="skeleton-block"></div>
+            <div class="skeleton-block"></div>
+            <div class="skeleton-block wide"></div>
+          </div>
+          <p>{{ 'action.loading' | t }}</p>
+        </div>
+      } @else if (state.viewError) {
+        <div class="view-error" role="alert">
+          <strong>{{ 'view.errorTitle' | t }}</strong>
+          <p>{{ state.viewError }}</p>
+          <button type="button" class="primary-button" (click)="state.retryView()">{{ 'action.retry' | t }}</button>
+        </div>
+      }
+
+      <div [hidden]="state.viewLoading || !!state.viewError">
+        <router-outlet></router-outlet>
+      </div>
+    </div>
+  </section>
+</main>
+
+<app-toast-host [toasts]="state.toasts" (dismiss)="state.dismissToast($event)"></app-toast-host>
+
+<app-confirm-dialog
+  *ngIf="state.confirmDialog as dialog"
+  [title]="dialog.title"
+  [message]="dialog.message"
+  [confirmLabel]="dialog.confirmLabel"
+  [cancelLabel]="dialog.cancelLabel"
+  [danger]="dialog.danger"
+  (confirm)="state.resolveConfirm(true)"
+  (cancel)="state.resolveConfirm(false)">
+</app-confirm-dialog>
