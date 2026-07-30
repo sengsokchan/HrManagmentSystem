@@ -31,16 +31,25 @@ class _HrManagementAppState extends State<HrManagementApp> {
     final apiClient = ApiClient(AppConfig.defaultApiUrl);
     final authDataSource = AuthRemoteDataSource(apiClient);
     final authRepository = AuthRepositoryImpl(authDataSource);
+    final sessionStorage = SessionStorage();
 
     controller = HrController(
       apiClient: apiClient,
       signInUseCase: SignInUseCase(authRepository),
-      sessionStorage: SessionStorage(),
+      sessionStorage: sessionStorage,
       localeController: localeController,
     );
 
-    localeController.load().whenComplete(() {
-      if (mounted) setState(() => _booting = false);
+    Future.wait([localeController.load(), sessionStorage.load()]).whenComplete(() {
+      if (!mounted) return;
+      if (sessionStorage.token != null) {
+        apiClient.configure(
+          baseUrl: controller.apiUrl.text,
+          token: sessionStorage.token,
+        );
+        controller.loadWorkspace();
+      }
+      setState(() => _booting = false);
     });
   }
 

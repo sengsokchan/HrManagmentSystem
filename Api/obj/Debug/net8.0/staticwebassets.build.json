@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "br6hzs5WMwKpQgZb3k1vKwVdRZ8MianjdiPjDVSASbk=",
+  "Source": "HrManagementSystem.Api",
+  "BasePath": "_content/HrManagementSystem.Api",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}

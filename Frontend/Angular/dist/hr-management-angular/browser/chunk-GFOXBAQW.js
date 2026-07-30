@@ -1,0 +1,1 @@
+import{J as n,Ka as s,r as e}from"./chunk-3VLQ5GEW.js";var a=class i{i18n=e(s);transform(t,r){return this.i18n.lang(),this.i18n.t(t,r)}static \u0275fac=function(r){return new(r||i)};static \u0275pipe=n({name:"t",type:i,pure:!1})};export{a};

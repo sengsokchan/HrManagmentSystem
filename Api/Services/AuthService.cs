@@ -1,3 +1,4 @@
+using HrManagementSystem.Application;
 using HrManagementSystem.Domain;
 using HrManagementSystem.Infrastructure.Security;
 

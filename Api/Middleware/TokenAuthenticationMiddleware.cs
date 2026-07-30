@@ -15,7 +15,7 @@ public sealed class TokenAuthenticationMiddleware(RequestDelegate next)
             if (authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) &&
                 tokenService.TryValidate(authorization["Bearer ".Length..].Trim(), out var user))
             {
-                context.Items["CurrentUser"] = user;
+                context.Items[HttpContextExtensions.CurrentUserItemKey] = user;
             }
         }
 
