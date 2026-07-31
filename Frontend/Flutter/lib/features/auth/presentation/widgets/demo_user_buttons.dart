@@ -19,9 +19,8 @@ class DemoUserButtons extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         FilledButton.tonal(
-          onPressed: () =>
-              controller.useDemo('employee@hr.local', 'Employee@123'),
-          child: Text(s.demoEmployee),
+          onPressed: () => controller.useDemo('admin@hr.local', 'Admin@123'),
+          child: Text(s.demoAdmin),
         ),
         const SizedBox(height: 8),
         OutlinedButton(
@@ -31,8 +30,9 @@ class DemoUserButtons extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         OutlinedButton(
-          onPressed: () => controller.useDemo('admin@hr.local', 'Admin@123'),
-          child: Text(s.demoAdmin),
+          onPressed: () =>
+              controller.useDemo('employee@hr.local', 'Employee@123'),
+          child: Text(s.demoEmployee),
         ),
       ],
     );

@@ -11,6 +11,19 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromSeconds(30);
     private readonly string _connectionString;
     private readonly IBusinessClock _clock;
+    private readonly bool _usesUsernameColumn;
+    private readonly bool _usesRoleNameColumn;
+    private readonly bool _hasRolePermissionTables;
+    private readonly bool _hasPayrollStatusColumn;
+    private readonly bool _usesLegacyBranchColumns;
+    private readonly bool _usesLegacyDepartmentColumns;
+    private readonly bool _usesLegacyPositionColumns;
+    private readonly bool _usesLegacyEmployeeColumns;
+    private readonly bool _usesLegacyAttendanceColumns;
+    private readonly bool _usesLegacyLeaveTable;
+    private readonly bool _usesLegacyPayrollColumns;
+    private readonly bool _usesLegacyAuditColumns;
+    private readonly bool _usesLegacyLeaveBalances;
 
     private List<Branch>? _branches;
     private List<Department>? _departments;
@@ -28,6 +41,19 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
         _connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is missing.");
         _clock = clock;
+        _usesUsernameColumn = ColumnExists("dbo.Users", "Username") && !ColumnExists("dbo.Users", "Email");
+        _usesRoleNameColumn = ColumnExists("dbo.Roles", "RoleName") && !ColumnExists("dbo.Roles", "Name");
+        _hasRolePermissionTables = TableExists("dbo.Permissions") && TableExists("dbo.RolePermissions");
+        _hasPayrollStatusColumn = ColumnExists("dbo.Payroll", "Status");
+        _usesLegacyBranchColumns = ColumnExists("dbo.Branches", "BranchName") && !ColumnExists("dbo.Branches", "Name");
+        _usesLegacyDepartmentColumns = ColumnExists("dbo.Departments", "DepartmentName") && !ColumnExists("dbo.Departments", "Name");
+        _usesLegacyPositionColumns = ColumnExists("dbo.Positions", "PositionName") && !ColumnExists("dbo.Positions", "Title");
+        _usesLegacyEmployeeColumns = !ColumnExists("dbo.Employees", "EmployeeCode");
+        _usesLegacyAttendanceColumns = ColumnExists("dbo.Attendance", "ClockIn") && !ColumnExists("dbo.Attendance", "CheckIn");
+        _usesLegacyLeaveTable = TableExists("dbo.Leaves") && !TableExists("dbo.LeaveRequests");
+        _usesLegacyPayrollColumns = ColumnExists("dbo.Payroll", "PayMonth") && !ColumnExists("dbo.Payroll", "PeriodStart");
+        _usesLegacyAuditColumns = ColumnExists("dbo.AuditLogs", "ActionDate") && !ColumnExists("dbo.AuditLogs", "CreatedAt");
+        _usesLegacyLeaveBalances = ColumnExists("dbo.LeaveBalances", "AnnualLeave") && !ColumnExists("dbo.LeaveBalances", "LeaveType");
         EnsureLoginSecurityTable();
         EnsureMustChangePasswordColumn();
         EnsureLeaveBalancesTable();
@@ -37,23 +63,33 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
     }
 
     public IReadOnlyList<Branch> Branches => _branches ??= Query(
-        "SELECT Id, Name, Address, Latitude, Longitude FROM Branches ORDER BY Name",
+        _usesLegacyBranchColumns
+            ? "SELECT Id, BranchName, Location, CAST(NULL AS DECIMAL(10,7)), CAST(NULL AS DECIMAL(10,7)) FROM Branches ORDER BY BranchName"
+            : "SELECT Id, Name, Address, Latitude, Longitude FROM Branches ORDER BY Name",
         reader => new Branch(reader.GetInt32(0), reader.GetString(1), NullableString(reader, 2), NullableDecimal(reader, 3) ?? 0, NullableDecimal(reader, 4) ?? 0));
 
     public IReadOnlyList<Department> Departments => _departments ??= Query(
-        "SELECT Id, Name FROM Departments ORDER BY Name",
+        _usesLegacyDepartmentColumns
+            ? "SELECT Id, DepartmentName FROM Departments ORDER BY DepartmentName"
+            : "SELECT Id, Name FROM Departments ORDER BY Name",
         reader => new Department(reader.GetInt32(0), reader.GetString(1)));
 
     public IReadOnlyList<Position> Positions => _positions ??= Query(
-        "SELECT Id, DepartmentId, Title FROM Positions ORDER BY Title",
+        _usesLegacyPositionColumns
+            ? "SELECT Id, CAST(0 AS INT) AS DepartmentId, PositionName AS Title FROM Positions ORDER BY PositionName"
+            : "SELECT Id, DepartmentId, Title FROM Positions ORDER BY Title",
         reader => new Position(reader.GetInt32(0), reader.GetInt32(1), reader.GetString(2)));
 
     public IReadOnlyList<Role> Roles => _roles ??= Query(
-        "SELECT Id, Name FROM Roles ORDER BY Name",
+        _usesRoleNameColumn
+            ? "SELECT Id, RoleName FROM Roles ORDER BY RoleName"
+            : "SELECT Id, Name FROM Roles ORDER BY Name",
         reader => new Role(reader.GetInt32(0), reader.GetString(1)));
 
     public IReadOnlyList<UserAccount> Users => _users ??= Query(
-        "SELECT Id, EmployeeId, RoleId, Email, PasswordHash, IsActive, MustChangePassword FROM Users ORDER BY Id",
+        _usesUsernameColumn
+            ? "SELECT Id, EmployeeId, RoleId, Username AS Email, PasswordHash, IsActive, MustChangePassword FROM Users ORDER BY Id"
+            : "SELECT Id, EmployeeId, RoleId, Email, PasswordHash, IsActive, MustChangePassword FROM Users ORDER BY Id",
         reader => new UserAccount(
             reader.GetInt32(0),
             NullableInt(reader, 1),
@@ -64,13 +100,39 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
             reader.GetBoolean(6)));
 
     public IReadOnlyList<Employee> Employees => _employees ??= Query(
-        """
-        SELECT Id, EmployeeCode, FullName, Gender, DateOfBirth, Email, Phone, DepartmentId, PositionId,
-               BranchId, ManagerId, ContractType, JoinDate, ResignDate, Status, EmergencyContact,
-               EducationHistory, WorkExperience, ISNULL(BasicSalary, 500), CreatedAt, UpdatedAt
-        FROM Employees
-        ORDER BY Id DESC
-        """,
+        _usesLegacyEmployeeColumns
+            ? """
+              SELECT Id,
+                     CONCAT('EMP', FORMAT(Id, '0000')) AS EmployeeCode,
+                     FullName,
+                     Gender,
+                     DateOfBirth,
+                     Email,
+                     Phone,
+                     DepartmentId,
+                     PositionId,
+                     BranchId,
+                     ManagerId,
+                     'Full-time' AS ContractType,
+                     JoinDate,
+                     CAST(NULL AS DATE) AS ResignDate,
+                     Status,
+                     '' AS EmergencyContact,
+                     '' AS EducationHistory,
+                     '' AS WorkExperience,
+                     ISNULL(BasicSalary, 500) AS BasicSalary,
+                     GETDATE() AS CreatedAt,
+                     CAST(NULL AS DATETIME2) AS UpdatedAt
+              FROM Employees
+              ORDER BY Id DESC
+              """
+            : """
+              SELECT Id, EmployeeCode, FullName, Gender, DateOfBirth, Email, Phone, DepartmentId, PositionId,
+                     BranchId, ManagerId, ContractType, JoinDate, ResignDate, Status, EmergencyContact,
+                     EducationHistory, WorkExperience, ISNULL(BasicSalary, 500), CreatedAt, UpdatedAt
+              FROM Employees
+              ORDER BY Id DESC
+              """,
         reader => new Employee(
             reader.GetInt32(0),
             reader.GetString(1),
@@ -95,11 +157,23 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
             NullableDateTime(reader, 20)));
 
     public IReadOnlyList<AttendanceRecord> Attendance => _attendance ??= Query(
-        """
-        SELECT Id, EmployeeId, WorkDate, CheckIn, CheckOut, Status, Latitude, Longitude, WorkMode, LateMinutes, OvertimeMinutes
-        FROM Attendance
-        ORDER BY WorkDate DESC, EmployeeId
-        """,
+        _usesLegacyAttendanceColumns
+            ? """
+              SELECT Id, EmployeeId, WorkDate, ClockIn, ClockOut,
+                     CASE WHEN IsLate = 1 THEN 'Late' ELSE 'Present' END AS Status,
+                     CAST(NULL AS DECIMAL(10,7)) AS Latitude,
+                     CAST(NULL AS DECIMAL(10,7)) AS Longitude,
+                     'Office' AS WorkMode,
+                     CASE WHEN IsLate = 1 THEN 1 ELSE 0 END AS LateMinutes,
+                     CAST(ISNULL(OvertimeHours, 0) * 60 AS INT) AS OvertimeMinutes
+              FROM Attendance
+              ORDER BY WorkDate DESC, EmployeeId
+              """
+            : """
+              SELECT Id, EmployeeId, WorkDate, CheckIn, CheckOut, Status, Latitude, Longitude, WorkMode, LateMinutes, OvertimeMinutes
+              FROM Attendance
+              ORDER BY WorkDate DESC, EmployeeId
+              """,
         reader => new AttendanceRecord(
             reader.GetInt32(0),
             reader.GetInt32(1),
@@ -114,20 +188,49 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
             reader.GetInt32(10)));
 
     public IReadOnlyList<LeaveRequest> LeaveRequests => _leaveRequests ??= Query(
-        """
-        SELECT Id, EmployeeId, LeaveType, StartDate, EndDate, IsHalfDay, Reason, AttachmentUrl, Status,
-               ManagerComment, HrComment, CreatedAt, UpdatedAt
-        FROM LeaveRequests
-        ORDER BY CreatedAt DESC
-        """,
+        _usesLegacyLeaveTable
+            ? """
+              SELECT Id, EmployeeId, LeaveType, StartDate, EndDate,
+                     CAST(0 AS BIT) AS IsHalfDay,
+                     '' AS Reason,
+                     CAST(NULL AS NVARCHAR(500)) AS AttachmentUrl,
+                     Status,
+                     CAST(NULL AS NVARCHAR(500)) AS ManagerComment,
+                     CAST(NULL AS NVARCHAR(500)) AS HrComment,
+                     RequestedAt AS CreatedAt,
+                     CAST(NULL AS DATETIME2) AS UpdatedAt
+              FROM Leaves
+              ORDER BY RequestedAt DESC
+              """
+            : """
+              SELECT Id, EmployeeId, LeaveType, StartDate, EndDate, IsHalfDay, Reason, AttachmentUrl, Status,
+                     ManagerComment, HrComment, CreatedAt, UpdatedAt
+              FROM LeaveRequests
+              ORDER BY CreatedAt DESC
+              """,
         reader => MapLeave(reader));
 
     public IReadOnlyList<PayrollRun> PayrollRuns => _payrollRuns ??= Query(
-        """
-        SELECT Id, EmployeeId, PeriodStart, PeriodEnd, BasicSalary, Allowance, Bonus, Tax, Deduction, OvertimePay, Status
-        FROM Payroll
-        ORDER BY PeriodEnd DESC
-        """,
+        _usesLegacyPayrollColumns
+            ? """
+              SELECT Id, EmployeeId,
+                     DATEFROMPARTS(PayYear, PayMonth, 1) AS PeriodStart,
+                     EOMONTH(DATEFROMPARTS(PayYear, PayMonth, 1)) AS PeriodEnd,
+                     CAST(ISNULL(BaseSalary, 0) AS DECIMAL(18,2)) AS BasicSalary,
+                     CAST(0 AS DECIMAL(18,2)) AS Allowance,
+                     CAST(ISNULL(Bonus, 0) AS DECIMAL(18,2)) AS Bonus,
+                     CAST(0 AS DECIMAL(18,2)) AS Tax,
+                     CAST(ISNULL(Deduction, 0) AS DECIMAL(18,2)) AS Deduction,
+                     CAST(0 AS DECIMAL(18,2)) AS OvertimePay,
+                     CASE WHEN PaidAt IS NOT NULL THEN 'Paid' ELSE 'Approved' END AS Status
+              FROM Payroll
+              ORDER BY PayYear DESC, PayMonth DESC
+              """
+            : """
+              SELECT Id, EmployeeId, PeriodStart, PeriodEnd, BasicSalary, Allowance, Bonus, Tax, Deduction, OvertimePay, Status
+              FROM Payroll
+              ORDER BY PeriodEnd DESC
+              """,
         reader => new PayrollRun(
             reader.GetInt32(0),
             reader.GetInt32(1),
@@ -142,9 +245,11 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
             ParseEnum<PayrollStatus>(reader.GetString(10))));
 
     public IReadOnlyList<AuditLog> AuditLogs => _auditLogs ??= Query(
-        "SELECT Id, UserId, Action, EntityName, EntityId, Details, CreatedAt FROM AuditLogs ORDER BY CreatedAt DESC",
+        _usesLegacyAuditColumns
+            ? "SELECT Id, UserId, Action, '' AS EntityName, '' AS EntityId, '' AS Details, ActionDate AS CreatedAt FROM AuditLogs ORDER BY ActionDate DESC"
+            : "SELECT Id, UserId, Action, EntityName, EntityId, Details, CreatedAt FROM AuditLogs ORDER BY CreatedAt DESC",
         reader => new AuditLog(
-            reader.GetInt64(0),
+            Convert.ToInt64(reader.GetValue(0)),
             NullableInt(reader, 1) ?? 0,
             reader.GetString(2),
             reader.GetString(3),
@@ -152,17 +257,58 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
             NullableString(reader, 5),
             reader.GetDateTime(6)));
 
-    public IReadOnlyCollection<string> GetPermissions(string roleName) => Query(
-        """
-        SELECT p.Code
-        FROM Permissions p
-        INNER JOIN RolePermissions rp ON rp.PermissionId = p.Id
-        INNER JOIN Roles r ON r.Id = rp.RoleId
-        WHERE r.Name = @RoleName
-        ORDER BY p.Code
-        """,
-        reader => reader.GetString(0),
-        new SqlParameter("@RoleName", roleName));
+    public IReadOnlyCollection<string> GetPermissions(string roleName)
+    {
+        if (_hasRolePermissionTables)
+        {
+            return Query(
+                _usesRoleNameColumn
+                    ? """
+                      SELECT p.Code
+                      FROM Permissions p
+                      INNER JOIN RolePermissions rp ON rp.PermissionId = p.Id
+                      INNER JOIN Roles r ON r.Id = rp.RoleId
+                      WHERE r.RoleName = @RoleName
+                      ORDER BY p.Code
+                      """
+                    : """
+                      SELECT p.Code
+                      FROM Permissions p
+                      INNER JOIN RolePermissions rp ON rp.PermissionId = p.Id
+                      INNER JOIN Roles r ON r.Id = rp.RoleId
+                      WHERE r.Name = @RoleName
+                      ORDER BY p.Code
+                      """,
+                reader => reader.GetString(0),
+                new SqlParameter("@RoleName", roleName));
+        }
+
+        return roleName switch
+        {
+            "HR Admin" => new[]
+            {
+                "employees.read", "employees.write",
+                "attendance.read", "attendance.write",
+                "leave.read", "leave.write", "leave.approve.hr", "leave.approve.manager",
+                "payroll.read", "payroll.write",
+                "roles.read"
+            },
+            "Manager" => new[]
+            {
+                "employees.read",
+                "attendance.read",
+                "leave.read", "leave.approve.manager",
+                "payroll.read"
+            },
+            "Employee" => new[]
+            {
+                "attendance.read",
+                "leave.read",
+                "payroll.read"
+            },
+            _ => Array.Empty<string>()
+        };
+    }
 
     public LoginSecurityState GetLoginSecurity(string email)
     {
@@ -343,14 +489,21 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
         var lateMinutes = now > officeStart ? (int)(now - officeStart).TotalMinutes : 0;
         var status = lateMinutes > 0 ? AttendanceStatus.Late : AttendanceStatus.Present;
         var id = Scalar<int>(
-            """
-            INSERT INTO Attendance (EmployeeId, WorkDate, CheckIn, WorkMode, Status, Latitude, Longitude, LateMinutes, OvertimeMinutes)
-            OUTPUT INSERTED.Id
-            VALUES (@EmployeeId, @WorkDate, @CheckIn, @WorkMode, @Status, @Latitude, @Longitude, @LateMinutes, 0)
-            """,
+            _usesLegacyAttendanceColumns
+                ? """
+                  INSERT INTO Attendance (EmployeeId, WorkDate, ClockIn, IsLate, OvertimeHours)
+                  OUTPUT INSERTED.Id
+                  VALUES (@EmployeeId, @WorkDate, @CheckIn, @IsLate, 0)
+                  """
+                : """
+                  INSERT INTO Attendance (EmployeeId, WorkDate, CheckIn, WorkMode, Status, Latitude, Longitude, LateMinutes, OvertimeMinutes)
+                  OUTPUT INSERTED.Id
+                  VALUES (@EmployeeId, @WorkDate, @CheckIn, @WorkMode, @Status, @Latitude, @Longitude, @LateMinutes, 0)
+                  """,
             new SqlParameter("@EmployeeId", employeeId),
             new SqlParameter("@WorkDate", today.ToDateTime(TimeOnly.MinValue)),
             new SqlParameter("@CheckIn", now),
+            new SqlParameter("@IsLate", lateMinutes > 0),
             new SqlParameter("@WorkMode", string.IsNullOrWhiteSpace(request.WorkMode) ? "Office" : request.WorkMode.Trim()),
             new SqlParameter("@Status", status.ToString()),
             new SqlParameter("@Latitude", DbValue(request.Latitude)),
@@ -369,13 +522,20 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
         var overtimeMinutes = now > officeEnd ? (int)(now - officeEnd).TotalMinutes : 0;
 
         Execute(
-            """
-            UPDATE Attendance
-            SET CheckOut = @CheckOut, OvertimeMinutes = @OvertimeMinutes
-            WHERE EmployeeId = @EmployeeId AND WorkDate = @WorkDate
-            """,
+            _usesLegacyAttendanceColumns
+                ? """
+                  UPDATE Attendance
+                  SET ClockOut = @CheckOut, OvertimeHours = @OvertimeHours
+                  WHERE EmployeeId = @EmployeeId AND WorkDate = @WorkDate
+                  """
+                : """
+                  UPDATE Attendance
+                  SET CheckOut = @CheckOut, OvertimeMinutes = @OvertimeMinutes
+                  WHERE EmployeeId = @EmployeeId AND WorkDate = @WorkDate
+                  """,
             new SqlParameter("@CheckOut", now),
             new SqlParameter("@OvertimeMinutes", overtimeMinutes),
+            new SqlParameter("@OvertimeHours", overtimeMinutes / 60.0),
             new SqlParameter("@EmployeeId", employeeId),
             new SqlParameter("@WorkDate", today.ToDateTime(TimeOnly.MinValue)));
 
@@ -386,11 +546,17 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
     public LeaveRequest CreateLeaveRequest(int employeeId, LeaveCreateRequest request)
     {
         var id = Scalar<int>(
-            """
-            INSERT INTO LeaveRequests (EmployeeId, LeaveType, StartDate, EndDate, IsHalfDay, Reason, AttachmentUrl, Status)
-            OUTPUT INSERTED.Id
-            VALUES (@EmployeeId, @LeaveType, @StartDate, @EndDate, @IsHalfDay, @Reason, @AttachmentUrl, 'Pending')
-            """,
+            _usesLegacyLeaveTable
+                ? """
+                  INSERT INTO Leaves (EmployeeId, LeaveType, StartDate, EndDate, Status, RequestedAt)
+                  OUTPUT INSERTED.Id
+                  VALUES (@EmployeeId, @LeaveType, @StartDate, @EndDate, 'Pending', GETDATE())
+                  """
+                : """
+                  INSERT INTO LeaveRequests (EmployeeId, LeaveType, StartDate, EndDate, IsHalfDay, Reason, AttachmentUrl, Status)
+                  OUTPUT INSERTED.Id
+                  VALUES (@EmployeeId, @LeaveType, @StartDate, @EndDate, @IsHalfDay, @Reason, @AttachmentUrl, 'Pending')
+                  """,
             new SqlParameter("@EmployeeId", employeeId),
             new SqlParameter("@LeaveType", request.LeaveType.Trim()),
             new SqlParameter("@StartDate", request.StartDate.ToDateTime(TimeOnly.MinValue)),
@@ -405,18 +571,32 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
 
     public LeaveRequest? UpdateLeaveDecision(int id, LeaveStatus status, string? comment, string actorRole)
     {
-        var commentColumn = actorRole == "Manager" ? "ManagerComment" : "HrComment";
-        Execute(
-            $"""
-            UPDATE LeaveRequests
-            SET Status = @Status,
-                {commentColumn} = @Comment,
-                UpdatedAt = SYSUTCDATETIME()
-            WHERE Id = @Id
-            """,
-            new SqlParameter("@Id", id),
-            new SqlParameter("@Status", status.ToString()),
-            new SqlParameter("@Comment", DbValue(comment)));
+        if (_usesLegacyLeaveTable)
+        {
+            Execute(
+                """
+                UPDATE Leaves
+                SET Status = @Status
+                WHERE Id = @Id
+                """,
+                new SqlParameter("@Id", id),
+                new SqlParameter("@Status", status.ToString()));
+        }
+        else
+        {
+            var commentColumn = actorRole == "Manager" ? "ManagerComment" : "HrComment";
+            Execute(
+                $"""
+                UPDATE LeaveRequests
+                SET Status = @Status,
+                    {commentColumn} = @Comment,
+                    UpdatedAt = SYSUTCDATETIME()
+                WHERE Id = @Id
+                """,
+                new SqlParameter("@Id", id),
+                new SqlParameter("@Status", status.ToString()),
+                new SqlParameter("@Comment", DbValue(comment)));
+        }
 
         InvalidateCachedLists();
         return LeaveRequests.FirstOrDefault(l => l.Id == id);
@@ -424,18 +604,50 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
 
     public void AddAudit(int userId, string action, string entityName, string entityId, string details)
     {
-        Execute(
-            "INSERT INTO AuditLogs (UserId, Action, EntityName, EntityId, Details) VALUES (@UserId, @Action, @EntityName, @EntityId, @Details)",
-            new SqlParameter("@UserId", userId),
-            new SqlParameter("@Action", action),
-            new SqlParameter("@EntityName", entityName),
-            new SqlParameter("@EntityId", entityId),
-            new SqlParameter("@Details", details));
+        if (_usesLegacyAuditColumns)
+        {
+            Execute(
+                "INSERT INTO AuditLogs (UserId, Action, ActionDate) VALUES (@UserId, @Action, GETDATE())",
+                new SqlParameter("@UserId", userId),
+                new SqlParameter("@Action", $"{action} {entityName}/{entityId}: {details}".Trim()));
+        }
+        else
+        {
+            Execute(
+                "INSERT INTO AuditLogs (UserId, Action, EntityName, EntityId, Details) VALUES (@UserId, @Action, @EntityName, @EntityId, @Details)",
+                new SqlParameter("@UserId", userId),
+                new SqlParameter("@Action", action),
+                new SqlParameter("@EntityName", entityName),
+                new SqlParameter("@EntityId", entityId),
+                new SqlParameter("@Details", details));
+        }
+
         _auditLogs = null;
     }
 
-    public IReadOnlyList<LeaveBalance> GetLeaveBalanceRows(int employeeId, int year) =>
-        Query(
+    public IReadOnlyList<LeaveBalance> GetLeaveBalanceRows(int employeeId, int year)
+    {
+        if (_usesLegacyLeaveBalances)
+        {
+            return Query(
+                """
+                SELECT Id, EmployeeId,
+                       ISNULL(AnnualLeave, 0), ISNULL(SickLeave, 0), ISNULL(SpecialLeave, 0)
+                FROM LeaveBalances
+                WHERE EmployeeId = @EmployeeId
+                """,
+                reader => (reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4)),
+                new SqlParameter("@EmployeeId", employeeId))
+                .SelectMany(row => new[]
+                {
+                    new LeaveBalance(row.Item1, row.Item2, "Annual leave", year, row.Item3),
+                    new LeaveBalance(row.Item1, row.Item2, "Sick leave", year, row.Item4),
+                    new LeaveBalance(row.Item1, row.Item2, "Special leave", year, row.Item5)
+                })
+                .ToList();
+        }
+
+        return Query(
             """
             SELECT Id, EmployeeId, LeaveType, [Year], EntitledDays
             FROM LeaveBalances
@@ -450,9 +662,27 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
                 reader.GetDecimal(4)),
             new SqlParameter("@EmployeeId", employeeId),
             new SqlParameter("@Year", year));
+    }
 
     public void EnsureDefaultLeaveBalances(int employeeId, int year)
     {
+        if (_usesLegacyLeaveBalances)
+        {
+            Execute(
+                """
+                IF NOT EXISTS (SELECT 1 FROM LeaveBalances WHERE EmployeeId = @EmployeeId)
+                BEGIN
+                    INSERT INTO LeaveBalances (EmployeeId, AnnualLeave, SickLeave, SpecialLeave)
+                    VALUES (@EmployeeId, @AnnualLeave, @SickLeave, @SpecialLeave)
+                END
+                """,
+                new SqlParameter("@EmployeeId", employeeId),
+                new SqlParameter("@AnnualLeave", (int)LeaveCalculator.DefaultEntitlements["Annual leave"]),
+                new SqlParameter("@SickLeave", (int)LeaveCalculator.DefaultEntitlements["Sick leave"]),
+                new SqlParameter("@SpecialLeave", 3));
+            return;
+        }
+
         foreach (var (leaveType, entitledDays) in LeaveCalculator.DefaultEntitlements)
         {
             Execute(
@@ -472,7 +702,35 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
         }
     }
 
-    public void UpsertLeaveBalance(int employeeId, string leaveType, int year, decimal entitledDays) =>
+    public void UpsertLeaveBalance(int employeeId, string leaveType, int year, decimal entitledDays)
+    {
+        if (_usesLegacyLeaveBalances)
+        {
+            var column = leaveType.Trim() switch
+            {
+                "Annual leave" => "AnnualLeave",
+                "Sick leave" => "SickLeave",
+                "Special leave" => "SpecialLeave",
+                _ => throw new ArgumentException($"Unsupported leave type '{leaveType}' for legacy leave balances.")
+            };
+
+            Execute(
+                $"""
+                IF EXISTS (SELECT 1 FROM LeaveBalances WHERE EmployeeId = @EmployeeId)
+                    UPDATE LeaveBalances SET [{column}] = @EntitledDays WHERE EmployeeId = @EmployeeId
+                ELSE
+                    INSERT INTO LeaveBalances (EmployeeId, AnnualLeave, SickLeave, SpecialLeave)
+                    VALUES (
+                        @EmployeeId,
+                        CASE WHEN '{column}' = 'AnnualLeave' THEN @EntitledDays ELSE 18 END,
+                        CASE WHEN '{column}' = 'SickLeave' THEN @EntitledDays ELSE 10 END,
+                        CASE WHEN '{column}' = 'SpecialLeave' THEN @EntitledDays ELSE 3 END)
+                """,
+                new SqlParameter("@EmployeeId", employeeId),
+                new SqlParameter("@EntitledDays", (int)entitledDays));
+            return;
+        }
+
         Execute(
             """
             MERGE LeaveBalances AS target
@@ -490,26 +748,39 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
             new SqlParameter("@LeaveType", leaveType.Trim()),
             new SqlParameter("@Year", year),
             new SqlParameter("@EntitledDays", entitledDays));
+    }
 
     public PayrollRun CreatePayrollRun(PayrollRun run)
     {
         var id = Scalar<int>(
-            """
-            INSERT INTO Payroll
-                (EmployeeId, PeriodStart, PeriodEnd, BasicSalary, Allowance, Bonus, Tax, Deduction, OvertimePay, Status)
-            OUTPUT INSERTED.Id
-            VALUES
-                (@EmployeeId, @PeriodStart, @PeriodEnd, @BasicSalary, @Allowance, @Bonus, @Tax, @Deduction, @OvertimePay, @Status)
-            """,
+            _usesLegacyPayrollColumns
+                ? """
+                  INSERT INTO Payroll
+                      (EmployeeId, PayMonth, PayYear, BaseSalary, Bonus, Deduction, NetSalary, PaidAt)
+                  OUTPUT INSERTED.Id
+                  VALUES
+                      (@EmployeeId, @PayMonth, @PayYear, @BasicSalary, @Bonus, @Deduction, @NetSalary, @PaidAt)
+                  """
+                : """
+                  INSERT INTO Payroll
+                      (EmployeeId, PeriodStart, PeriodEnd, BasicSalary, Allowance, Bonus, Tax, Deduction, OvertimePay, Status)
+                  OUTPUT INSERTED.Id
+                  VALUES
+                      (@EmployeeId, @PeriodStart, @PeriodEnd, @BasicSalary, @Allowance, @Bonus, @Tax, @Deduction, @OvertimePay, @Status)
+                  """,
             new SqlParameter("@EmployeeId", run.EmployeeId),
             new SqlParameter("@PeriodStart", run.PeriodStart.ToDateTime(TimeOnly.MinValue)),
             new SqlParameter("@PeriodEnd", run.PeriodEnd.ToDateTime(TimeOnly.MinValue)),
+            new SqlParameter("@PayMonth", run.PeriodStart.Month),
+            new SqlParameter("@PayYear", run.PeriodStart.Year),
             new SqlParameter("@BasicSalary", run.BasicSalary),
             new SqlParameter("@Allowance", run.Allowance),
             new SqlParameter("@Bonus", run.Bonus),
             new SqlParameter("@Tax", run.Tax),
             new SqlParameter("@Deduction", run.Deduction),
             new SqlParameter("@OvertimePay", run.OvertimePay),
+            new SqlParameter("@NetSalary", run.NetSalary),
+            new SqlParameter("@PaidAt", run.Status == PayrollStatus.Paid ? DateTime.Now : DBNull.Value),
             new SqlParameter("@Status", run.Status.ToString()));
 
         InvalidateCachedLists();
@@ -518,10 +789,25 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
 
     public PayrollRun? UpdatePayrollStatus(int id, PayrollStatus status)
     {
-        Execute(
-            "UPDATE Payroll SET Status = @Status WHERE Id = @Id",
-            new SqlParameter("@Id", id),
-            new SqlParameter("@Status", status.ToString()));
+        if (_usesLegacyPayrollColumns)
+        {
+            Execute(
+                """
+                UPDATE Payroll
+                SET PaidAt = CASE WHEN @Status = 'Paid' THEN ISNULL(PaidAt, GETDATE()) ELSE NULL END
+                WHERE Id = @Id
+                """,
+                new SqlParameter("@Id", id),
+                new SqlParameter("@Status", status.ToString()));
+        }
+        else
+        {
+            Execute(
+                "UPDATE Payroll SET Status = @Status WHERE Id = @Id",
+                new SqlParameter("@Id", id),
+                new SqlParameter("@Status", status.ToString()));
+        }
+
         InvalidateCachedLists();
         return PayrollRuns.FirstOrDefault(p => p.Id == id);
     }
@@ -593,25 +879,50 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
         """);
 
     private void NormalizePayrollStatuses() => Execute(
-        """
-        UPDATE Payroll SET Status = 'Approved' WHERE Status IN ('Processed', 'Ready');
-        """);
+        _hasPayrollStatusColumn
+            ? """
+              UPDATE Payroll SET Status = 'Approved' WHERE Status IN ('Processed', 'Ready');
+              """
+            : "SELECT 1;");
 
-    private void EnsurePayrollWritePermission() => Execute(
-        """
-        IF NOT EXISTS (SELECT 1 FROM Permissions WHERE Code = 'payroll.write')
-        BEGIN
-            INSERT INTO Permissions (Code, Description) VALUES ('payroll.write', 'Generate and update payroll status');
-        END
+    private void EnsurePayrollWritePermission()
+    {
+        if (!_hasRolePermissionTables)
+        {
+            return;
+        }
 
-        DECLARE @PermissionId INT = (SELECT Id FROM Permissions WHERE Code = 'payroll.write');
-        DECLARE @HrAdminRoleId INT = (SELECT Id FROM Roles WHERE Name = 'HR Admin');
-        IF @PermissionId IS NOT NULL AND @HrAdminRoleId IS NOT NULL
-           AND NOT EXISTS (SELECT 1 FROM RolePermissions WHERE RoleId = @HrAdminRoleId AND PermissionId = @PermissionId)
-        BEGIN
-            INSERT INTO RolePermissions (RoleId, PermissionId) VALUES (@HrAdminRoleId, @PermissionId);
-        END
-        """);
+        Execute(
+            _usesRoleNameColumn
+                ? """
+                  IF NOT EXISTS (SELECT 1 FROM Permissions WHERE Code = 'payroll.write')
+                  BEGIN
+                      INSERT INTO Permissions (Code, Description) VALUES ('payroll.write', 'Generate and update payroll status');
+                  END
+
+                  DECLARE @PermissionId INT = (SELECT Id FROM Permissions WHERE Code = 'payroll.write');
+                  DECLARE @HrAdminRoleId INT = (SELECT Id FROM Roles WHERE RoleName = 'HR Admin');
+                  IF @PermissionId IS NOT NULL AND @HrAdminRoleId IS NOT NULL
+                     AND NOT EXISTS (SELECT 1 FROM RolePermissions WHERE RoleId = @HrAdminRoleId AND PermissionId = @PermissionId)
+                  BEGIN
+                      INSERT INTO RolePermissions (RoleId, PermissionId) VALUES (@HrAdminRoleId, @PermissionId);
+                  END
+                  """
+                : """
+                  IF NOT EXISTS (SELECT 1 FROM Permissions WHERE Code = 'payroll.write')
+                  BEGIN
+                      INSERT INTO Permissions (Code, Description) VALUES ('payroll.write', 'Generate and update payroll status');
+                  END
+
+                  DECLARE @PermissionId INT = (SELECT Id FROM Permissions WHERE Code = 'payroll.write');
+                  DECLARE @HrAdminRoleId INT = (SELECT Id FROM Roles WHERE Name = 'HR Admin');
+                  IF @PermissionId IS NOT NULL AND @HrAdminRoleId IS NOT NULL
+                     AND NOT EXISTS (SELECT 1 FROM RolePermissions WHERE RoleId = @HrAdminRoleId AND PermissionId = @PermissionId)
+                  BEGIN
+                      INSERT INTO RolePermissions (RoleId, PermissionId) VALUES (@HrAdminRoleId, @PermissionId);
+                  END
+                  """);
+    }
 
     private List<T> Query<T>(string sql, Func<SqlDataReader, T> map, params SqlParameter[] parameters)
     {
@@ -683,6 +994,21 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
     ];
 
     private static object DbValue<T>(T? value) => value is null ? DBNull.Value : value;
+    private bool ColumnExists(string table, string column) =>
+        Scalar<int>(
+            """
+            SELECT CASE WHEN COL_LENGTH(@Table, @Column) IS NULL THEN 0 ELSE 1 END;
+            """,
+            new SqlParameter("@Table", table),
+            new SqlParameter("@Column", column)) == 1;
+
+    private bool TableExists(string table) =>
+        Scalar<int>(
+            """
+            SELECT CASE WHEN OBJECT_ID(@Table, 'U') IS NULL THEN 0 ELSE 1 END;
+            """,
+            new SqlParameter("@Table", table)) == 1;
+
     private static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
     private static int? NullableInt(SqlDataReader reader, int index) => reader.IsDBNull(index) ? null : reader.GetInt32(index);
     private static decimal? NullableDecimal(SqlDataReader reader, int index) => reader.IsDBNull(index) ? null : reader.GetDecimal(index);

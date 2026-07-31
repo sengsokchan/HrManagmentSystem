@@ -5,6 +5,9 @@ using HrManagementSystem.Infrastructure;
 using HrManagementSystem.Infrastructure.Persistence;
 using HrManagementSystem.Infrastructure.Security;
 
+// Local SQL Server may negotiate TLS < 1.2; Encrypt=False + this switch removes the console warning.
+AppContext.SetSwitch("Switch.Microsoft.Data.SqlClient.SuppressInsecureTLSWarning", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.WebHost.UseUrls("http://127.0.0.1:5088");

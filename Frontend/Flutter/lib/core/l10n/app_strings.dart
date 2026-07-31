@@ -90,7 +90,7 @@ class AppStrings {
 
   String get demoEmployee => _t('Employee', 'បុគ្គលិក');
   String get demoManager => _t('Manager', 'អ្នកគ្រប់គ្រង');
-  String get demoAdmin => _t('HR Admin (web tools)', 'អ្នកគ្រប់គ្រង HR (គេហទំព័រ)');
+  String get demoAdmin => _t('HR Admin', 'អ្នកគ្រប់គ្រង HR');
 
   String _t(String english, String khmer) => isKhmer ? khmer : english;
 }
