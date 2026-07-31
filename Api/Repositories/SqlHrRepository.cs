@@ -389,15 +389,25 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
         var nextId = Scalar<int>("SELECT ISNULL(MAX(Id), 0) + 1 FROM Employees");
         var code = $"EMP{nextId:0000}";
         var id = Scalar<int>(
-            """
-            INSERT INTO Employees
-                (EmployeeCode, FullName, Gender, DateOfBirth, Email, Phone, DepartmentId, PositionId, BranchId, ManagerId,
-                 ContractType, JoinDate, ResignDate, Status, EmergencyContact, EducationHistory, WorkExperience, BasicSalary)
-            OUTPUT INSERTED.Id
-            VALUES
-                (@EmployeeCode, @FullName, @Gender, @DateOfBirth, @Email, @Phone, @DepartmentId, @PositionId, @BranchId, @ManagerId,
-                 @ContractType, @JoinDate, @ResignDate, @Status, @EmergencyContact, @EducationHistory, @WorkExperience, @BasicSalary)
-            """,
+            _usesLegacyEmployeeColumns
+                ? """
+                  INSERT INTO Employees
+                      (FullName, Gender, DateOfBirth, Email, Phone, Address, DepartmentId, PositionId, BranchId, ManagerId,
+                       JoinDate, Status, BasicSalary)
+                  OUTPUT INSERTED.Id
+                  VALUES
+                      (@FullName, @Gender, @DateOfBirth, @Email, @Phone, @Address, @DepartmentId, @PositionId, @BranchId, @ManagerId,
+                       @JoinDate, @Status, @BasicSalary)
+                  """
+                : """
+                  INSERT INTO Employees
+                      (EmployeeCode, FullName, Gender, DateOfBirth, Email, Phone, DepartmentId, PositionId, BranchId, ManagerId,
+                       ContractType, JoinDate, ResignDate, Status, EmergencyContact, EducationHistory, WorkExperience, BasicSalary)
+                  OUTPUT INSERTED.Id
+                  VALUES
+                      (@EmployeeCode, @FullName, @Gender, @DateOfBirth, @Email, @Phone, @DepartmentId, @PositionId, @BranchId, @ManagerId,
+                       @ContractType, @JoinDate, @ResignDate, @Status, @EmergencyContact, @EducationHistory, @WorkExperience, @BasicSalary)
+                  """,
             EmployeeParameters(request, code));
 
         InvalidateCachedLists();
@@ -410,28 +420,46 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
         if (existing is null) return null;
 
         Execute(
-            """
-            UPDATE Employees
-            SET FullName = @FullName,
-                Gender = @Gender,
-                DateOfBirth = @DateOfBirth,
-                Email = @Email,
-                Phone = @Phone,
-                DepartmentId = @DepartmentId,
-                PositionId = @PositionId,
-                BranchId = @BranchId,
-                ManagerId = @ManagerId,
-                ContractType = @ContractType,
-                JoinDate = @JoinDate,
-                ResignDate = @ResignDate,
-                Status = @Status,
-                EmergencyContact = @EmergencyContact,
-                EducationHistory = @EducationHistory,
-                WorkExperience = @WorkExperience,
-                BasicSalary = @BasicSalary,
-                UpdatedAt = SYSUTCDATETIME()
-            WHERE Id = @Id
-            """,
+            _usesLegacyEmployeeColumns
+                ? """
+                  UPDATE Employees
+                  SET FullName = @FullName,
+                      Gender = @Gender,
+                      DateOfBirth = @DateOfBirth,
+                      Email = @Email,
+                      Phone = @Phone,
+                      Address = @Address,
+                      DepartmentId = @DepartmentId,
+                      PositionId = @PositionId,
+                      BranchId = @BranchId,
+                      ManagerId = @ManagerId,
+                      JoinDate = @JoinDate,
+                      Status = @Status,
+                      BasicSalary = @BasicSalary
+                  WHERE Id = @Id
+                  """
+                : """
+                  UPDATE Employees
+                  SET FullName = @FullName,
+                      Gender = @Gender,
+                      DateOfBirth = @DateOfBirth,
+                      Email = @Email,
+                      Phone = @Phone,
+                      DepartmentId = @DepartmentId,
+                      PositionId = @PositionId,
+                      BranchId = @BranchId,
+                      ManagerId = @ManagerId,
+                      ContractType = @ContractType,
+                      JoinDate = @JoinDate,
+                      ResignDate = @ResignDate,
+                      Status = @Status,
+                      EmergencyContact = @EmergencyContact,
+                      EducationHistory = @EducationHistory,
+                      WorkExperience = @WorkExperience,
+                      BasicSalary = @BasicSalary,
+                      UpdatedAt = SYSUTCDATETIME()
+                  WHERE Id = @Id
+                  """,
             EmployeeParameters(request, existing.EmployeeCode).Append(new SqlParameter("@Id", id)).ToArray());
 
         InvalidateCachedLists();
@@ -440,7 +468,11 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
 
     public Employee? DeactivateEmployee(int id)
     {
-        Execute("UPDATE Employees SET Status = 'Inactive', UpdatedAt = SYSUTCDATETIME() WHERE Id = @Id", new SqlParameter("@Id", id));
+        Execute(
+            _usesLegacyEmployeeColumns
+                ? "UPDATE Employees SET Status = 'Inactive' WHERE Id = @Id"
+                : "UPDATE Employees SET Status = 'Inactive', UpdatedAt = SYSUTCDATETIME() WHERE Id = @Id",
+            new SqlParameter("@Id", id));
         InvalidateCachedLists();
         return Employees.FirstOrDefault(e => e.Id == id);
     }
@@ -448,11 +480,17 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
     public UserAccount CreateUserAccount(int employeeId, int roleId, string email, string passwordHash, bool mustChangePassword)
     {
         var id = Scalar<int>(
-            """
-            INSERT INTO Users (EmployeeId, RoleId, Email, PasswordHash, IsActive, MustChangePassword)
-            OUTPUT INSERTED.Id
-            VALUES (@EmployeeId, @RoleId, @Email, @PasswordHash, 1, @MustChangePassword)
-            """,
+            _usesUsernameColumn
+                ? """
+                  INSERT INTO Users (EmployeeId, RoleId, Username, PasswordHash, IsActive, MustChangePassword)
+                  OUTPUT INSERTED.Id
+                  VALUES (@EmployeeId, @RoleId, @Email, @PasswordHash, 1, @MustChangePassword)
+                  """
+                : """
+                  INSERT INTO Users (EmployeeId, RoleId, Email, PasswordHash, IsActive, MustChangePassword)
+                  OUTPUT INSERTED.Id
+                  VALUES (@EmployeeId, @RoleId, @Email, @PasswordHash, 1, @MustChangePassword)
+                  """,
             new SqlParameter("@EmployeeId", employeeId),
             new SqlParameter("@RoleId", roleId),
             new SqlParameter("@Email", email.Trim()),
@@ -971,27 +1009,40 @@ public sealed class SqlHrRepository : IHrRepository, ILeaveDecisionRepository
             reader.GetDateTime(11),
             NullableDateTime(reader, 12));
 
-    private static SqlParameter[] EmployeeParameters(EmployeeWriteRequest request, string employeeCode) =>
-    [
-        new SqlParameter("@EmployeeCode", employeeCode),
-        new SqlParameter("@FullName", request.FullName.Trim()),
-        new SqlParameter("@Gender", request.Gender.Trim()),
-        new SqlParameter("@DateOfBirth", request.DateOfBirth.ToDateTime(TimeOnly.MinValue)),
-        new SqlParameter("@Email", request.Email.Trim()),
-        new SqlParameter("@Phone", DbValue(request.Phone)),
-        new SqlParameter("@DepartmentId", request.DepartmentId),
-        new SqlParameter("@PositionId", request.PositionId),
-        new SqlParameter("@BranchId", request.BranchId),
-        new SqlParameter("@ManagerId", DbValue(request.ManagerId)),
-        new SqlParameter("@ContractType", request.ContractType.Trim()),
-        new SqlParameter("@JoinDate", request.JoinDate.ToDateTime(TimeOnly.MinValue)),
-        new SqlParameter("@ResignDate", DbValue(request.ResignDate?.ToDateTime(TimeOnly.MinValue))),
-        new SqlParameter("@Status", request.Status.ToString()),
-        new SqlParameter("@EmergencyContact", DbValue(request.EmergencyContact)),
-        new SqlParameter("@EducationHistory", DbValue(request.EducationHistory)),
-        new SqlParameter("@WorkExperience", DbValue(request.WorkExperience)),
-        new SqlParameter("@BasicSalary", request.BasicSalary < 0 ? 0 : request.BasicSalary)
-    ];
+    private static SqlParameter[] EmployeeParameters(EmployeeWriteRequest request, string employeeCode)
+    {
+        var notes = string.Join(
+            Environment.NewLine,
+            new[]
+            {
+                string.IsNullOrWhiteSpace(request.EmergencyContact) ? null : $"Emergency: {request.EmergencyContact.Trim()}",
+                string.IsNullOrWhiteSpace(request.EducationHistory) ? null : $"Education: {request.EducationHistory.Trim()}",
+                string.IsNullOrWhiteSpace(request.WorkExperience) ? null : $"Experience: {request.WorkExperience.Trim()}"
+            }.Where(part => part is not null));
+
+        return
+        [
+            new SqlParameter("@EmployeeCode", employeeCode),
+            new SqlParameter("@FullName", request.FullName.Trim()),
+            new SqlParameter("@Gender", request.Gender.Trim()),
+            new SqlParameter("@DateOfBirth", request.DateOfBirth.ToDateTime(TimeOnly.MinValue)),
+            new SqlParameter("@Email", request.Email.Trim()),
+            new SqlParameter("@Phone", DbValue(request.Phone)),
+            new SqlParameter("@Address", string.IsNullOrWhiteSpace(notes) ? DBNull.Value : notes),
+            new SqlParameter("@DepartmentId", request.DepartmentId),
+            new SqlParameter("@PositionId", request.PositionId),
+            new SqlParameter("@BranchId", request.BranchId),
+            new SqlParameter("@ManagerId", DbValue(request.ManagerId)),
+            new SqlParameter("@ContractType", request.ContractType.Trim()),
+            new SqlParameter("@JoinDate", request.JoinDate.ToDateTime(TimeOnly.MinValue)),
+            new SqlParameter("@ResignDate", DbValue(request.ResignDate?.ToDateTime(TimeOnly.MinValue))),
+            new SqlParameter("@Status", request.Status.ToString()),
+            new SqlParameter("@EmergencyContact", DbValue(request.EmergencyContact)),
+            new SqlParameter("@EducationHistory", DbValue(request.EducationHistory)),
+            new SqlParameter("@WorkExperience", DbValue(request.WorkExperience)),
+            new SqlParameter("@BasicSalary", request.BasicSalary < 0 ? 0 : request.BasicSalary)
+        ];
+    }
 
     private static object DbValue<T>(T? value) => value is null ? DBNull.Value : value;
     private bool ColumnExists(string table, string column) =>
