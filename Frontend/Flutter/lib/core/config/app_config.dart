@@ -15,7 +15,8 @@ class AppConfig {
     }
 
     if (Platform.isAndroid) {
-      // Android emulator localhost bridge to host machine.
+      // Physical devices need the PC LAN IP via Advanced settings or --dart-define=API_BASE_URL.
+      // Emulator can use the host loopback bridge.
       return 'http://10.0.2.2:5088';
     }
 

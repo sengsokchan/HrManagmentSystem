@@ -10,7 +10,7 @@ AppContext.SetSwitch("Switch.Microsoft.Data.SqlClient.SuppressInsecureTLSWarning
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.WebHost.UseUrls("http://127.0.0.1:5088");
+builder.WebHost.UseUrls("http://0.0.0.0:5088");
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
