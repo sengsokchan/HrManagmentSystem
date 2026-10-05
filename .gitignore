@@ -1,0 +1,53 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# Secrets / local env (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+**/secrets/
+**/*service-account*.json
+**/*-credentials.json
+
+# .NET
+**/bin/
+**/obj/
+**/out/
+*.user
+*.suo
+*.cache
+project.lock.json
+artifacts/
+
+# Angular / Node
+**/node_modules/
+**/dist/
+**/.angular/
+**/.firebase/
+firebase-debug.log
+.firebase/
+npm-debug.log*
+yarn-error.log*
+
+# Flutter
+Frontend/Flutter/.dart_tool/
+Frontend/Flutter/.packages
+Frontend/Flutter/build/
+Frontend/Flutter/.flutter-plugins
+Frontend/Flutter/.flutter-plugins-dependencies
+Frontend/Flutter/ios/Pods/
+Frontend/Flutter/android/.gradle/
+Frontend/Flutter/android/local.properties
+
+# Logs / temp
+*.log
+*.tmp
+*.temp

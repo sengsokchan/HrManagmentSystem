@@ -14,5 +14,7 @@ import { HrStateService } from '../../Core/services/hr-state.service';
 })
 export class LoginComponent {
   readonly i18n = inject(I18nService);
+  showPassword = false;
+
   constructor(public readonly state: HrStateService) {}
 }

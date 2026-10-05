@@ -1,0 +1,8 @@
+{
+  "/api": {
+    "target": "https://hr-api-1018718109286.asia-southeast1.run.app",
+    "secure": true,
+    "changeOrigin": true,
+    "logLevel": "debug"
+  }
+}
